@@ -1,0 +1,50 @@
+import networkx as nx
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import matplotlib as plt
+from ChemicalCase import ChemicalCase
+
+df = pd.read_csv("gckpp_EdgeList.csv")
+B = nx.DiGraph()
+B.add_edges_from([(df["from"][i],df["to"][i]) for i in range(0,len(df["to"]))])
+
+# reads the edge list data from a CSV 
+filename = "Amazon_L1_20180101_2100.txt"
+amazon_surface = ChemicalCase(filename)
+                
+for i in range(1,914):
+    # For all edges coming in and out of a reaction node, set to half the rxn timescale 
+    for u,v in B.in_edges("R"+str(i)):
+        B[u][v]['timescale'] = 0.5 / (amazon_surface.reaction_rates[i-1] + 1e-20) # 1e-20 to avoid divide by 0
+    for u,v in B.out_edges("R"+str(i)):
+        B[u][v]['timescale'] = 0.5 / (amazon_surface.reaction_rates[i-1] + 1e-20)
+
+
+rxn_node_list = ['R' + str(i) for i in range(1,914)]
+spc_node_list = [node for node in list(B.nodes) if node not in rxn_node_list]
+
+
+
+# Calculate shortest path lengths
+shortest_paths = []   # Loop through all nodes in the graph as target nodes
+shortest_timescales = []
+count = 0
+for source_node in spc_node_list: # Ensure the source node is not the same as the target node
+    for target_node in spc_node_list: # Check if there exists a path from the source node to the target node
+        if source_node != target_node and nx.has_path(B, source_node, target_node):
+            count += 1
+            # delete last count in the same print line
+            print('\rCalculating shortest path #', str(count), end='')
+            path = nx.shortest_path(B, source=source_node, target=target_node,weight='timescale')
+            timescale = nx.path_weight(B, path,weight='timescale')
+            shortest_paths.append(path)
+            shortest_timescales.append(timescale)
+
+corr = B.corr()
+cmap = sns.diverging_palette(230, 20, as_cmap=True)
+mask = np.triu(corr)
+sns.heatmap(corr, mask=mask, cmap=cmap, vmax=.3, center=0,
+            square=True, linewidths=.5, cbar_kws={"shrink": .5})
+
+plt.xlabel("Chemical Pathway Timescale [seconds/molec/cc]")
